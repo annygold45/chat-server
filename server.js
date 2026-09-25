@@ -1,6 +1,35 @@
 const WebSocket = require('ws');
+const http = require('http');
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
 const PORT = process.env.PORT || 8080;
-const wss = new WebSocket.Server({ port: PORT });
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+
+const app = express();
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: UPLOAD_DIR,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg';
+      cb(null, Date.now() + '_' + Math.random().toString(36).slice(2) + ext);
+    }
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 }
+});
+
+app.get('/', (req, res) => res.send('Chat server running'));
+app.use('/uploads', express.static(UPLOAD_DIR));
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no file' });
+  res.json({ url: '/uploads/' + req.file.filename });
+});
+
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 const online = {};
 const queue = {};
 
@@ -20,9 +49,16 @@ wss.on('connection', (ws) => {
       ws.send(JSON.stringify({ type: 'ok' }));
       (queue[ws.user] || []).forEach(m => ws.send(JSON.stringify(m)));
       queue[ws.user] = [];
-    } else if (d.type === 'msg' && ws.user && d.to && d.text) {
+    } else if (d.type === 'msg' && ws.user && d.to) {
       const to = String(d.to).toLowerCase();
-      const m = { type: 'msg', from: ws.user, text: String(d.text), time: Date.now(), id: d.id };
+      const m = {
+        type: 'msg',
+        from: ws.user,
+        text: d.text ? String(d.text) : '',
+        imageUrl: d.imageUrl ? String(d.imageUrl) : null,
+        time: Date.now(),
+        id: d.id
+      };
       if (online[to] && online[to].readyState === 1) {
         online[to].send(JSON.stringify(m));
         tell(ws.user, { type: 'status', to, state: 'delivered', id: d.id });
@@ -44,4 +80,4 @@ wss.on('connection', (ws) => {
   });
 });
 
-console.log('Server running on port ' + PORT);
+server.listen(PORT, () => console.log('Server running on port ' + PORT));
