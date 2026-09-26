@@ -86,6 +86,8 @@ wss.on('connection', (ws) => {
         text: d.text ? String(d.text) : '',
         imageUrl: d.imageUrl ? String(d.imageUrl) : null,
         audioUrl: d.audioUrl ? String(d.audioUrl) : null,
+        replyText: d.replyText ? String(d.replyText) : null,
+        replyByMe: !!d.replyByMe,
         time: Date.now(),
         id: d.id
       };
