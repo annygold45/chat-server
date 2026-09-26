@@ -1,4 +1,6 @@
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
 const http = require('http');
 const express = require('express');
 const multer = require('multer');
@@ -62,8 +64,6 @@ app.post('/login', (req, res) => {
   tokens[token] = u;
   res.json({ token, username: u });
 });
-const fs = require('fs');
-const path = require('path');
 const PROFILE_FILE = path.join(__dirname, 'profiles.json');
 let profiles = {};
 try { profiles = JSON.parse(fs.readFileSync(PROFILE_FILE, 'utf8')); } catch (e) {}
