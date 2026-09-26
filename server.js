@@ -93,6 +93,7 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const online = {};
 const queue = {};
+const lastSeen = {};
 
 function tell(user, obj) {
   const w = online[user];
@@ -141,14 +142,23 @@ wss.on('connection', (ws) => {
       tell(String(d.to).toLowerCase(), { type: 'status', to: ws.user, state: 'read', id: d.id });
     } else if (d.type === 'delete' && ws.user && d.to && d.id) {
       tell(String(d.to).toLowerCase(), { type: 'delete', from: ws.user, id: d.id });
+    } else if (d.type === 'edit' && ws.user && d.to && d.id && d.text != null) {
+      tell(String(d.to).toLowerCase(), { type: 'edit', from: ws.user, id: d.id, text: String(d.text) });
+    } else if (d.type === 'reaction' && ws.user && d.to && d.id && d.emoji != null) {
+      tell(String(d.to).toLowerCase(), { type: 'reaction', from: ws.user, id: d.id, emoji: String(d.emoji) });
     } else if (d.type === 'ping' && d.to) {
-      tell(String(d.to).toLowerCase(), { type: 'presence' });
-      ws.send(JSON.stringify({ type: 'presence_reply', online: !!(online[String(d.to).toLowerCase()]) }));
+      const target = String(d.to).toLowerCase();
+      tell(target, { type: 'presence' });
+      const isOn = !!(online[target]);
+      ws.send(JSON.stringify({ type: 'presence_reply', online: isOn, lastSeen: isOn ? null : (lastSeen[target] || null) }));
     }
   });
 
   ws.on('close', () => {
-    if (ws.user && online[ws.user] === ws) delete online[ws.user];
+    if (ws.user && online[ws.user] === ws) {
+      delete online[ws.user];
+      lastSeen[ws.user] = Date.now();
+    }
   });
 });
 
