@@ -23,6 +23,32 @@ const upload = multer({
 
 app.get('/', (req, res) => res.send('Chat server running'));
 app.use('/uploads', express.static(UPLOAD_DIR));
+app.use(express.json());
+
+const PROFILE_FILE = path.join(__dirname, 'profiles.json');
+let profiles = {};
+try { profiles = JSON.parse(fs.readFileSync(PROFILE_FILE, 'utf8')); } catch (e) {}
+
+function saveProfiles() {
+  fs.writeFileSync(PROFILE_FILE, JSON.stringify(profiles));
+}
+
+app.get('/profile/:user', (req, res) => {
+  const u = req.params.user.toLowerCase();
+  res.json(profiles[u] || { name: u, status: '', avatarUrl: '' });
+});
+
+app.post('/profile/:user', (req, res) => {
+  const u = req.params.user.toLowerCase();
+  const cur = profiles[u] || {};
+  profiles[u] = {
+    name: req.body.name != null ? String(req.body.name).slice(0, 40) : cur.name || u,
+    status: req.body.status != null ? String(req.body.status).slice(0, 100) : cur.status || '',
+    avatarUrl: req.body.avatarUrl != null ? String(req.body.avatarUrl) : cur.avatarUrl || ''
+  };
+  saveProfiles();
+  res.json(profiles[u]);
+});
 app.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   res.json({ url: '/uploads/' + req.file.filename });
