@@ -30,6 +30,38 @@ app.post('/upload', upload.single('file'), (req, res) => {
 });
 
 app.use(express.json());
+
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const USERS_FILE = path.join(__dirname, 'users.json');
+let users = {};
+try { users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch (e) {}
+function saveUsers() { fs.writeFileSync(USERS_FILE, JSON.stringify(users)); }
+
+const tokens = {};
+
+app.post('/register', (req, res) => {
+  const u = String(req.body.username || '').toLowerCase().trim();
+  const p = String(req.body.password || '');
+  if (!/^[a-z0-9_]{3,20}$/.test(u)) return res.status(400).json({ error: 'invalid username' });
+  if (p.length < 4) return res.status(400).json({ error: 'password too short' });
+  if (users[u]) return res.status(409).json({ error: 'username taken' });
+  users[u] = { hash: bcrypt.hashSync(p, 8) };
+  saveUsers();
+  const token = crypto.randomBytes(16).toString('hex');
+  tokens[token] = u;
+  res.json({ token, username: u });
+});
+
+app.post('/login', (req, res) => {
+  const u = String(req.body.username || '').toLowerCase().trim();
+  const p = String(req.body.password || '');
+  const rec = users[u];
+  if (!rec || !bcrypt.compareSync(p, rec.hash)) return res.status(401).json({ error: 'invalid credentials' });
+  const token = crypto.randomBytes(16).toString('hex');
+  tokens[token] = u;
+  res.json({ token, username: u });
+});
 const fs = require('fs');
 const path = require('path');
 const PROFILE_FILE = path.join(__dirname, 'profiles.json');
@@ -72,8 +104,14 @@ wss.on('connection', (ws) => {
     let d;
     try { d = JSON.parse(raw); } catch { return; }
 
-    if (d.type === 'login' && d.user) {
-      ws.user = String(d.user).toLowerCase();
+    if (d.type === 'login' && d.user && d.token) {
+      const claimedUser = String(d.user).toLowerCase();
+      const tokenUser = tokens[d.token];
+      if (!tokenUser || tokenUser !== claimedUser) {
+        ws.send(JSON.stringify({ type: 'auth_error' }));
+        return;
+      }
+      ws.user = claimedUser;
       online[ws.user] = ws;
       ws.send(JSON.stringify({ type: 'ok' }));
       (queue[ws.user] || []).forEach(m => ws.send(JSON.stringify(m)));
