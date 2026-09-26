@@ -99,6 +99,8 @@ wss.on('connection', (ws) => {
       tell(String(d.to).toLowerCase(), { type: 'typing', from: ws.user });
     } else if (d.type === 'read' && ws.user && d.to) {
       tell(String(d.to).toLowerCase(), { type: 'status', to: ws.user, state: 'read', id: d.id });
+    } else if (d.type === 'delete' && ws.user && d.to && d.id) {
+      tell(String(d.to).toLowerCase(), { type: 'delete', from: ws.user, id: d.id });
     } else if (d.type === 'ping' && d.to) {
       tell(String(d.to).toLowerCase(), { type: 'presence' });
       ws.send(JSON.stringify({ type: 'presence_reply', online: !!(online[String(d.to).toLowerCase()]) }));
