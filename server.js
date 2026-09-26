@@ -2,29 +2,36 @@ const WebSocket = require('ws');
 const http = require('http');
 const express = require('express');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
 
-const PORT = process.env.PORT || 8080;
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
-
-const app = express();
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: UPLOAD_DIR,
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname) || '.jpg';
-      cb(null, Date.now() + '_' + Math.random().toString(36).slice(2) + ext);
-    }
-  }),
-  limits: { fileSize: 8 * 1024 * 1024 }
+cloudinary.config({
+  cloud_name: 'zdjkzup9',
+  api_key: '393987592711381',
+  api_secret: 'ZHqkWKm-yWVlxwyDGvfhAlEJG-A'
 });
 
-app.get('/', (req, res) => res.send('Chat server running'));
-app.use('/uploads', express.static(UPLOAD_DIR));
-app.use(express.json());
+const PORT = process.env.PORT || 8080;
+const app = express();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 
+app.get('/', (req, res) => res.send('Chat server running'));
+
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no file' });
+  const isAudio = (req.file.mimetype || '').startsWith('audio');
+  const stream = cloudinary.uploader.upload_stream(
+    { resource_type: isAudio ? 'video' : 'image', folder: 'chat_uploads' },
+    (err, result) => {
+      if (err) return res.status(500).json({ error: 'upload failed' });
+      res.json({ url: result.secure_url });
+    }
+  );
+  stream.end(req.file.buffer);
+});
+
+app.use(express.json());
+const fs = require('fs');
+const path = require('path');
 const PROFILE_FILE = path.join(__dirname, 'profiles.json');
 let profiles = {};
 try { profiles = JSON.parse(fs.readFileSync(PROFILE_FILE, 'utf8')); } catch (e) {}
@@ -48,10 +55,6 @@ app.post('/profile/:user', (req, res) => {
   };
   saveProfiles();
   res.json(profiles[u]);
-});
-app.post('/upload', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'no file' });
-  res.json({ url: '/uploads/' + req.file.filename });
 });
 
 const server = http.createServer(app);
@@ -82,6 +85,7 @@ wss.on('connection', (ws) => {
         from: ws.user,
         text: d.text ? String(d.text) : '',
         imageUrl: d.imageUrl ? String(d.imageUrl) : null,
+        audioUrl: d.audioUrl ? String(d.audioUrl) : null,
         time: Date.now(),
         id: d.id
       };
