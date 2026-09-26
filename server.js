@@ -97,7 +97,11 @@ const lastSeen = {};
 
 function tell(user, obj) {
   const w = online[user];
-  if (w && w.readyState === 1) w.send(JSON.stringify(obj));
+  if (w && w.readyState === 1) {
+    w.send(JSON.stringify(obj));
+  } else if (obj.type === 'edit' || obj.type === 'delete' || obj.type === 'reaction') {
+    (queue[user] = queue[user] || []).push(obj);
+  }
 }
 
 wss.on('connection', (ws) => {
