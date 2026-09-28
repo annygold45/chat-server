@@ -95,6 +95,44 @@ const online = {};
 const queue = {};
 const lastSeen = {};
 
+const GROUPS_FILE = path.join(__dirname, 'groups.json');
+let groups = {};
+try { groups = JSON.parse(fs.readFileSync(GROUPS_FILE, 'utf8')); } catch (e) {}
+function saveGroups() { fs.writeFileSync(GROUPS_FILE, JSON.stringify(groups)); }
+
+app.post('/group/create', (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 40);
+  const creator = String(req.body.creator || '').toLowerCase();
+  const members = (req.body.members || []).map(m => String(m).toLowerCase());
+  if (!name || !creator) return res.status(400).json({ error: 'missing fields' });
+  const id = 'g_' + crypto.randomBytes(6).toString('hex');
+  const allMembers = Array.from(new Set([creator, ...members]));
+  groups[id] = { id, name, creator, members: allMembers, createdAt: Date.now() };
+  saveGroups();
+  res.json(groups[id]);
+});
+
+app.get('/group/:id', (req, res) => {
+  const g = groups[req.params.id];
+  if (!g) return res.status(404).json({ error: 'not found' });
+  res.json(g);
+});
+
+app.get('/groups/:user', (req, res) => {
+  const u = req.params.user.toLowerCase();
+  const list = Object.values(groups).filter(g => g.members.includes(u));
+  res.json(list);
+});
+
+app.post('/group/:id/add', (req, res) => {
+  const g = groups[req.params.id];
+  if (!g) return res.status(404).json({ error: 'not found' });
+  const who = String(req.body.username || '').toLowerCase();
+  if (who && !g.members.includes(who)) g.members.push(who);
+  saveGroups();
+  res.json(g);
+});
+
 function tell(user, obj) {
   const w = online[user];
   if (w && w.readyState === 1) {
@@ -150,6 +188,23 @@ wss.on('connection', (ws) => {
       tell(String(d.to).toLowerCase(), { type: 'edit', from: ws.user, id: d.id, text: String(d.text) });
     } else if (d.type === 'reaction' && ws.user && d.to && d.id && d.emoji != null) {
       tell(String(d.to).toLowerCase(), { type: 'reaction', from: ws.user, id: d.id, emoji: String(d.emoji) });
+    } else if (d.type === 'group_msg' && ws.user && d.groupId) {
+      const g = groups[d.groupId];
+      if (g && g.members.includes(ws.user)) {
+        const m = {
+          type: 'group_msg',
+          groupId: d.groupId,
+          from: ws.user,
+          text: d.text ? String(d.text) : '',
+          imageUrl: d.imageUrl ? String(d.imageUrl) : null,
+          audioUrl: d.audioUrl ? String(d.audioUrl) : null,
+          time: Date.now(),
+          id: d.id
+        };
+        g.members.forEach(function(member) {
+          if (member !== ws.user) tell(member, m);
+        });
+      }
     } else if (d.type === 'ping' && d.to) {
       const target = String(d.to).toLowerCase();
       tell(target, { type: 'presence' });
