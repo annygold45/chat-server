@@ -107,9 +107,33 @@ app.post('/group/create', (req, res) => {
   if (!name || !creator) return res.status(400).json({ error: 'missing fields' });
   const id = 'g_' + crypto.randomBytes(6).toString('hex');
   const allMembers = Array.from(new Set([creator, ...members]));
-  groups[id] = { id, name, creator, members: allMembers, createdAt: Date.now() };
+  groups[id] = { id, name, description: '', photoUrl: '', creator, admins: [creator], members: allMembers, createdAt: Date.now() };
   saveGroups();
   res.json(groups[id]);
+});
+
+app.post('/group/:id/update', (req, res) => {
+  const g = groups[req.params.id];
+  if (!g) return res.status(404).json({ error: 'not found' });
+  const requester = String(req.body.requester || '').toLowerCase();
+  if (!g.admins.includes(requester)) return res.status(403).json({ error: 'not an admin' });
+  if (req.body.name != null) g.name = String(req.body.name).trim().slice(0, 40);
+  if (req.body.description != null) g.description = String(req.body.description).slice(0, 200);
+  if (req.body.photoUrl != null) g.photoUrl = String(req.body.photoUrl);
+  saveGroups();
+  res.json(g);
+});
+
+app.post('/group/:id/remove', (req, res) => {
+  const g = groups[req.params.id];
+  if (!g) return res.status(404).json({ error: 'not found' });
+  const requester = String(req.body.requester || '').toLowerCase();
+  const who = String(req.body.username || '').toLowerCase();
+  if (!g.admins.includes(requester)) return res.status(403).json({ error: 'not an admin' });
+  g.members = g.members.filter(m => m !== who);
+  g.admins = g.admins.filter(m => m !== who);
+  saveGroups();
+  res.json(g);
 });
 
 app.get('/group/:id', (req, res) => {
