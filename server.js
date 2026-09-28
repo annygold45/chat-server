@@ -115,6 +115,7 @@ app.post('/group/create', (req, res) => {
 app.post('/group/:id/update', (req, res) => {
   const g = groups[req.params.id];
   if (!g) return res.status(404).json({ error: 'not found' });
+  ensureGroupDefaults(g);
   const requester = String(req.body.requester || '').toLowerCase();
   if (!g.admins.includes(requester)) return res.status(403).json({ error: 'not an admin' });
   if (req.body.name != null) g.name = String(req.body.name).trim().slice(0, 40);
@@ -127,6 +128,7 @@ app.post('/group/:id/update', (req, res) => {
 app.post('/group/:id/remove', (req, res) => {
   const g = groups[req.params.id];
   if (!g) return res.status(404).json({ error: 'not found' });
+  ensureGroupDefaults(g);
   const requester = String(req.body.requester || '').toLowerCase();
   const who = String(req.body.username || '').toLowerCase();
   if (!g.admins.includes(requester)) return res.status(403).json({ error: 'not an admin' });
@@ -136,10 +138,17 @@ app.post('/group/:id/remove', (req, res) => {
   res.json(g);
 });
 
+function ensureGroupDefaults(g) {
+  if (!g.admins) g.admins = [g.creator];
+  if (g.description == null) g.description = '';
+  if (g.photoUrl == null) g.photoUrl = '';
+  return g;
+}
+
 app.get('/group/:id', (req, res) => {
   const g = groups[req.params.id];
   if (!g) return res.status(404).json({ error: 'not found' });
-  res.json(g);
+  res.json(ensureGroupDefaults(g));
 });
 
 app.get('/groups/:user', (req, res) => {
