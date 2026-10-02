@@ -34,6 +34,26 @@ app.post('/upload', upload.single('file'), (req, res) => {
 app.use(express.json());
 
 const bcrypt = require('bcryptjs');
+const nodemailer = require('nodemailer');
+
+const mailer = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'annygold088@gmail.com',
+    pass: 'gctenhttswszsmkk'
+  }
+});
+
+const pendingSignups = {};
+
+function sendCode(email, code) {
+  return mailer.sendMail({
+    from: 'Chat App <annygold088@gmail.com>',
+    to: email,
+    subject: 'Your Chat verification code',
+    text: 'Your verification code is: ' + code
+  });
+}
 const crypto = require('crypto');
 const USERS_FILE = path.join(__dirname, 'users.json');
 let users = {};
@@ -42,17 +62,36 @@ function saveUsers() { fs.writeFileSync(USERS_FILE, JSON.stringify(users)); }
 
 const tokens = {};
 
-app.post('/register', (req, res) => {
+app.post('/register/start', async (req, res) => {
   const u = String(req.body.username || '').toLowerCase().trim();
+  const email = String(req.body.email || '').toLowerCase().trim();
   const p = String(req.body.password || '');
   if (!/^[a-z0-9_]{3,20}$/.test(u)) return res.status(400).json({ error: 'invalid username' });
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'invalid email' });
   if (p.length < 4) return res.status(400).json({ error: 'password too short' });
   if (users[u]) return res.status(409).json({ error: 'username taken' });
-  users[u] = { hash: bcrypt.hashSync(p, 8) };
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  pendingSignups[email] = { username: u, email, hash: bcrypt.hashSync(p, 8), code, expires: Date.now() + 10 * 60000 };
+  try {
+    await sendCode(email, code);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'could not send email' });
+  }
+});
+
+app.post('/register/verify', (req, res) => {
+  const email = String(req.body.email || '').toLowerCase().trim();
+  const code = String(req.body.code || '').trim();
+  const pending = pendingSignups[email];
+  if (!pending || pending.expires < Date.now()) return res.status(400).json({ error: 'code expired' });
+  if (pending.code !== code) return res.status(400).json({ error: 'wrong code' });
+  users[pending.username] = { hash: pending.hash, email: pending.email };
   saveUsers();
+  delete pendingSignups[email];
   const token = crypto.randomBytes(16).toString('hex');
-  tokens[token] = u;
-  res.json({ token, username: u });
+  tokens[token] = pending.username;
+  res.json({ token, username: pending.username });
 });
 
 app.post('/login', (req, res) => {
