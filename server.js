@@ -36,23 +36,20 @@ app.use(express.json());
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
 
-const mailer = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: 'annygold088@gmail.com',
-    pass: 'gctenhttswszsmkk'
-  }
-});
-
 const pendingSignups = {};
 
 function sendCode(email, code) {
-  return mailer.sendMail({
-    from: 'Chat App <annygold088@gmail.com>',
-    to: email,
-    subject: 'Your Chat verification code',
-    text: 'Your verification code is: ' + code
-  });
+  return fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    signal: AbortSignal.timeout(15000),
+    headers: { 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sender: { name: 'Chat App', email: process.env.MAIL_FROM },
+      to: [{ email }],
+      subject: 'Your Chat verification code',
+      textContent: 'Your verification code is: ' + code
+    })
+  }).then(r => { if (!r.ok) throw new Error('mail failed ' + r.status); });
 }
 const crypto = require('crypto');
 const USERS_FILE = path.join(__dirname, 'users.json');
