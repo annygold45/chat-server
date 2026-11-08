@@ -216,7 +216,7 @@ function tell(user, obj) {
   const w = online[user];
   if (w && w.readyState === 1) {
     w.send(JSON.stringify(obj));
-  } else if (obj.type === 'edit' || obj.type === 'delete' || obj.type === 'reaction') {
+  } else if (obj.type === 'edit' || obj.type === 'delete' || obj.type === 'reaction' || obj.type === 'status') {
     (queue[user] = queue[user] || []).push(obj);
   }
 }
@@ -236,7 +236,7 @@ wss.on('connection', (ws) => {
       ws.user = claimedUser;
       online[ws.user] = ws;
       ws.send(JSON.stringify({ type: 'ok' }));
-      (queue[ws.user] || []).forEach(m => ws.send(JSON.stringify(m)));
+      (queue[ws.user] || []).forEach(m => { ws.send(JSON.stringify(m)); if (m.type === 'msg' && m.from) tell(m.from, { type: 'status', to: ws.user, state: 'delivered', id: m.id }); });
       queue[ws.user] = [];
     } else if (d.type === 'msg' && ws.user && d.to) {
       const to = String(d.to).toLowerCase();
