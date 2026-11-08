@@ -51,11 +51,21 @@ function sendCode(email, code) {
     })
   }).then(r => { if (!r.ok) throw new Error('mail failed ' + r.status); });
 }
+const { Pool } = require('pg');
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
+let dbReady = false;
+function dbSave(name, obj) {
+  pool.query('INSERT INTO store (name, data) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET data = $2', [name, JSON.stringify(obj)]).catch(e => console.log('db save error', e.message));
+}
+async function dbLoad(name) {
+  const r = await pool.query('SELECT data FROM store WHERE name = $1', [name]);
+  return r.rows.length ? r.rows[0].data : null;
+}
 const crypto = require('crypto');
 const USERS_FILE = path.join(__dirname, 'users.json');
 let users = {};
 try { users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch (e) {}
-function saveUsers() { fs.writeFileSync(USERS_FILE, JSON.stringify(users)); }
+function saveUsers() { if (dbReady) dbSave('users', users); else fs.writeFileSync(USERS_FILE, JSON.stringify(users)); }
 
 const tokens = {};
 
@@ -87,7 +97,7 @@ app.post('/register/verify', (req, res) => {
   saveUsers();
   delete pendingSignups[email];
   const token = crypto.randomBytes(16).toString('hex');
-  tokens[token] = pending.username;
+  tokens[token] = pending.username; if (dbReady) dbSave('tokens', tokens);
   res.json({ token, username: pending.username });
 });
 
@@ -97,7 +107,7 @@ app.post('/login', (req, res) => {
   const rec = users[u];
   if (!rec || !bcrypt.compareSync(p, rec.hash)) return res.status(401).json({ error: 'invalid credentials' });
   const token = crypto.randomBytes(16).toString('hex');
-  tokens[token] = u;
+  tokens[token] = u; if (dbReady) dbSave('tokens', tokens);
   res.json({ token, username: u });
 });
 const PROFILE_FILE = path.join(__dirname, 'profiles.json');
@@ -105,7 +115,7 @@ let profiles = {};
 try { profiles = JSON.parse(fs.readFileSync(PROFILE_FILE, 'utf8')); } catch (e) {}
 
 function saveProfiles() {
-  fs.writeFileSync(PROFILE_FILE, JSON.stringify(profiles));
+  if (dbReady) dbSave('profiles', profiles); else fs.writeFileSync(PROFILE_FILE, JSON.stringify(profiles));
 }
 
 app.get('/profile/:user', (req, res) => {
@@ -134,7 +144,7 @@ const lastSeen = {};
 const GROUPS_FILE = path.join(__dirname, 'groups.json');
 let groups = {};
 try { groups = JSON.parse(fs.readFileSync(GROUPS_FILE, 'utf8')); } catch (e) {}
-function saveGroups() { fs.writeFileSync(GROUPS_FILE, JSON.stringify(groups)); }
+function saveGroups() { if (dbReady) dbSave('groups', groups); else fs.writeFileSync(GROUPS_FILE, JSON.stringify(groups)); }
 
 app.post('/group/create', (req, res) => {
   const name = String(req.body.name || '').trim().slice(0, 40);
@@ -290,4 +300,17 @@ wss.on('connection', (ws) => {
   });
 });
 
-server.listen(PORT, () => console.log('Server running on port ' + PORT));
+(async () => {
+  if (pool) {
+    try {
+      await pool.query('CREATE TABLE IF NOT EXISTS store (name text PRIMARY KEY, data jsonb NOT NULL)');
+      const u = await dbLoad('users'); if (u) users = u; else dbSave('users', users);
+      const p = await dbLoad('profiles'); if (p) profiles = p; else dbSave('profiles', profiles);
+      const g = await dbLoad('groups'); if (g) groups = g; else dbSave('groups', groups);
+      const t = await dbLoad('tokens'); if (t) Object.assign(tokens, t);
+      dbReady = true;
+      console.log('database ready');
+    } catch (e) { console.log('database error, using files', e.message); }
+  }
+  server.listen(PORT, () => console.log('Server running on port ' + PORT));
+})();
